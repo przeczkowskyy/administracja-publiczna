@@ -418,6 +418,27 @@
   .opt.correct{ background:var(--good-soft); border-color:var(--good); }
   .opt.correct .bullet{ border-color:var(--good); background:var(--good); color:var(--good-soft); }
   .opt.correct .otext{ color:var(--good-ink); font-weight:600; }
+  .opt.wrong{ background:var(--accent-soft); border-color:var(--accent); }
+  .opt.wrong .bullet{ border-color:var(--accent); background:var(--accent); color:var(--accent-ink); }
+  .opt.wrong .otext{ color:var(--accent); font-weight:600; }
+
+  .opt-test{
+    width:100%; text-align:left; cursor:pointer;
+    background:var(--surface); font:inherit; color:var(--ink);
+    appearance:none; -webkit-appearance:none;
+  }
+  .opt-test:not(:disabled):hover{ background:var(--surface-2); border-color:var(--line-strong); }
+  .opt-test:disabled{ cursor:default; opacity:1; }
+  .opt-test:disabled .bullet{ opacity:1; }
+
+  .test-score{
+    font-family:var(--font-mono);
+    font-variant-numeric:tabular-nums;
+    font-size:12px;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+  .test-score b{ color:var(--ink); }
 
   .explain{
     margin-top:14px; padding-top:14px;
@@ -540,6 +561,7 @@
       <div class="segmented" id="mode-switch">
         <button data-mode="full" class="active">Pełny tryb</button>
         <button data-mode="quick">Szybka nauka</button>
+        <button data-mode="test">Test</button>
       </div>
       <input type="search" id="search" placeholder="Szukaj w pytaniach…" />
       <button class="iconbtn" id="shuffle-btn" title="Wylosuj kolejność ponownie">⤮ Losuj</button>
@@ -553,6 +575,7 @@
   <div class="progress-line">
     <span class="count" id="progress-count">0 / 0</span>
     <span class="bar"><i id="progress-bar"></i></span>
+    <span class="test-score" id="test-score" style="display:none;"></span>
   </div>
 
   <div class="stage">
@@ -564,7 +587,7 @@
         <span class="qnum" id="qnum">—</span>
       </div>
       <p class="qtext" id="q-text">—</p>
-      <div class="answer-divider"><span class="label">Odpowiedź</span><span class="line"></span></div>
+      <div class="answer-divider"><span class="label" id="answer-label">Odpowiedź</span><span class="line"></span></div>
       <div id="answer-body"></div>
     </div>
   </div>
@@ -578,7 +601,7 @@
 
   <footer>
     Pytania połączone z ośmiu baz egzaminacyjnych (2013–2025) w jeden zbiór — bez podziału na oryginalne testy.
-    Skróty klawiszowe: <kbd>→</kbd> następna, <kbd>←</kbd> poprzednia, <kbd>K</kbd> oznacz jako opanowane.
+    Skróty klawiszowe: <kbd>→</kbd> następna, <kbd>←</kbd> poprzednia, <kbd>K</kbd> oznacz jako opanowane, <kbd>A</kbd>–<kbd>D</kbd> wybór odpowiedzi w trybie Test.
   </footer>
 
 </div>
@@ -5292,7 +5315,9 @@
     hideKnown: false,
     queue: [],
     index: 0,
-    explainOpen: false
+    explainOpen: false,
+    testAnswered: null,
+    testScore: { correct: 0, total: 0 }
   };
 
   function shuffleArr(arr){
@@ -5385,11 +5410,13 @@
     state.queue = q;
     if(reset){
       state.index = 0;
+      state.testScore = { correct: 0, total: 0 };
     } else if(prevId != null){
       var found = q.findIndex(function(item){ return item.id === prevId; });
       state.index = found >= 0 ? found : 0;
     }
     state.explainOpen = false;
+    state.testAnswered = null;
     render(false);
   }
 
@@ -5397,6 +5424,8 @@
     shuffleArr(state.queue);
     state.index = 0;
     state.explainOpen = false;
+    state.testAnswered = null;
+    state.testScore = { correct: 0, total: 0 };
     render(true);
   }
 
@@ -5405,11 +5434,16 @@
   modeSwitch.addEventListener('click', function(e){
     var btn = e.target.closest('button[data-mode]');
     if(!btn) return;
-    state.mode = btn.getAttribute('data-mode');
+    var newMode = btn.getAttribute('data-mode');
+    if(newMode === 'test' && state.mode !== 'test'){
+      state.testScore = { correct: 0, total: 0 };
+    }
+    state.mode = newMode;
     Array.prototype.forEach.call(modeSwitch.querySelectorAll('button'), function(b){
       b.classList.toggle('active', b === btn);
     });
     state.explainOpen = false;
+    state.testAnswered = null;
     render(false);
   });
 
@@ -5438,6 +5472,7 @@
     if(!state.queue.length) return;
     state.index = (state.index + delta + state.queue.length) % state.queue.length;
     state.explainOpen = false;
+    state.testAnswered = null;
     render(true);
   }
   document.getElementById('prev-btn').addEventListener('click', function(){ go(-1); });
@@ -5455,11 +5490,24 @@
     updateStats();
   }
 
+  function answerCurrent(letter){
+    var item = state.queue[state.index];
+    if(!item || state.mode !== 'test' || state.testAnswered || !item.options.length) return;
+    if(!item.options.some(function(o){ return o.letter === letter; })) return;
+    state.testAnswered = letter;
+    state.testScore.total++;
+    if(letter === item.correctLetter) state.testScore.correct++;
+    buildAnswer(item);
+    updateAnswerLabel();
+    updateScoreUI();
+  }
+
   document.addEventListener('keydown', function(e){
     if(e.target === searchEl) return;
     if(e.key === 'ArrowRight'){ go(1); }
     else if(e.key === 'ArrowLeft'){ go(-1); }
     else if(e.key.toLowerCase() === 'k'){ toggleKnownCurrent(); render(false); }
+    else if(['a','b','c','d'].indexOf(e.key.toLowerCase()) !== -1){ answerCurrent(e.key.toLowerCase()); }
   });
 
   function letterLabel(letter){ return letter.toUpperCase(); }
@@ -5495,6 +5543,47 @@
           body.appendChild(ex);
         }
       }
+    } else if(state.mode === 'test'){
+      var answered = !!state.testAnswered;
+      item.options.forEach(function(o){
+        var row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'opt opt-test';
+        if(answered){
+          if(o.letter === item.correctLetter) row.classList.add('correct');
+          else if(o.letter === state.testAnswered) row.classList.add('wrong');
+        }
+        row.disabled = answered;
+        var bullet = document.createElement('div');
+        bullet.className = 'bullet';
+        bullet.textContent = answered && o.letter === item.correctLetter ? '✓'
+          : (answered && o.letter === state.testAnswered ? '✗' : letterLabel(o.letter));
+        var text = document.createElement('div');
+        text.className = 'otext';
+        text.textContent = o.text;
+        row.appendChild(bullet);
+        row.appendChild(text);
+        row.addEventListener('click', function(){ answerCurrent(o.letter); });
+        body.appendChild(row);
+      });
+
+      if(answered && item.explanation){
+        var ex3 = document.createElement('div');
+        ex3.className = 'explain';
+        var lbl3 = document.createElement('span');
+        lbl3.className = 'explain-label';
+        lbl3.textContent = 'Podstawa prawna / uzasadnienie';
+        ex3.appendChild(lbl3);
+        ex3.appendChild(document.createTextNode(item.explanation));
+        body.appendChild(ex3);
+      } else if(!answered){
+        var hint = document.createElement('div');
+        hint.className = 'reveal-explain';
+        hint.style.cursor = 'default';
+        hint.style.textDecoration = 'none';
+        hint.textContent = 'Wybierz odpowiedź, aby zobaczyć wynik';
+        body.appendChild(hint);
+      }
     } else {
       item.options.forEach(function(o){
         var row = document.createElement('div');
@@ -5521,6 +5610,25 @@
         body.appendChild(ex2);
       }
     }
+  }
+
+  function updateAnswerLabel(){
+    var label = document.getElementById('answer-label');
+    if(state.mode === 'test'){
+      var item = state.queue[state.index];
+      var hasOptions = item && item.options.length;
+      label.textContent = (!hasOptions || state.testAnswered) ? 'Odpowiedź' : 'Wybierz odpowiedź';
+    } else {
+      label.textContent = 'Odpowiedź';
+    }
+  }
+
+  function updateScoreUI(){
+    var el = document.getElementById('test-score');
+    if(state.mode !== 'test'){ el.style.display = 'none'; return; }
+    el.style.display = '';
+    var pct = state.testScore.total ? Math.round(state.testScore.correct / state.testScore.total * 100) : 0;
+    el.innerHTML = 'Wynik: <b>' + state.testScore.correct + '</b> / ' + state.testScore.total + (state.testScore.total ? ' · ' + pct + '%' : '');
   }
 
   function sourceYear(src){
@@ -5550,6 +5658,7 @@
         div.innerHTML = '<h2>Brak fiszek do wyświetlenia</h2><p>Zmień filtry kategorii, wyłącz „ukryj opanowane” albo wyczyść wyszukiwanie.</p>';
         document.querySelector('.wrap').insertBefore(div, document.querySelector('footer'));
       }
+      document.getElementById('test-score').style.display = 'none';
       updateStats();
       return;
     } else if(emptyExisting){
@@ -5574,6 +5683,8 @@
     document.getElementById('q-text').textContent = item.question;
 
     buildAnswer(item);
+    updateAnswerLabel();
+    updateScoreUI();
 
     document.getElementById('know-btn').textContent = isKnown ? 'Cofnij „umiem” ✓' : 'Powtórzyć / Umiem ✓';
 
